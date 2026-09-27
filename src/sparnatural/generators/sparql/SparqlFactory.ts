@@ -1,12 +1,65 @@
-import { AggregateExpression, BgpPattern, BindPattern, BlankTerm, FilterPattern, GroupPattern, IriTerm, OperationExpression, OptionalPattern, Pattern, PropertyPath, QuadTerm, ServicePattern, Term, Triple, UnionPattern, VariableExpression, VariableTerm, Wildcard } from "sparqljs";
-import { Literal, Variable, NamedNode } from "@rdfjs/types";
-import {  Parser as SparqlParser } from "sparqljs";
-import { DataFactory } from 'rdf-data-factory';
+import {
+  AstFactory,
+  Expression,
+  ExpressionOperation,
+  GraphNode,
+  Path,
+  Pattern,
+  PatternBgp,
+  PatternBind,
+  PatternFilter,
+  PatternGroup,
+  PatternOptional,
+  PatternService,
+  PatternUnion,
+  TermBlank,
+  TermIri,
+  TermIriFull,
+  TermLiteral,
+  TermVariable,
+  TripleNesting,
+} from "@traqula/rules-sparql-1-1";
+import { Parser } from "@traqula/parser-sparql-1-1";
 
-const factory = new DataFactory();
+// the AST factory building all Traqula nodes
+// all nodes are built with an auto-generated source location, so that the generator prints them in full
+const F = new AstFactory();
 
+const XSD_STRING = "http://www.w3.org/2001/XMLSchema#string";
+
+/**
+ * Builds the nodes of the Traqula AST of the generated SPARQL query
+ */
 export default class SparqlFactory {
-  static sparqlParser =  new SparqlParser({ pathOnly: true } as any);
+  static sparqlParser = new Parser();
+
+  static buildVariable(name: string): TermVariable {
+    return F.termVariable(name, F.gen());
+  }
+
+  static buildNamedNode(iri: string): TermIriFull {
+    return F.termNamed(F.gen(), iri);
+  }
+
+  /**
+   * @param value The lexical value of the literal
+   * @param langOrDatatype Either a language code, or the datatype of the literal
+   * @returns A literal, with a language, a datatype, or none of them
+   */
+  static buildLiteral(value: string, langOrDatatype?: string | TermIriFull): TermLiteral {
+    // in RDF 1.1, a literal typed with xsd:string is the same as a plain literal, which is shorter to print
+    if (langOrDatatype === undefined || (typeof langOrDatatype !== "string" && langOrDatatype.value === XSD_STRING)) {
+      return F.termLiteral(F.gen(), value);
+    } else if (typeof langOrDatatype === "string") {
+      return F.termLiteral(F.gen(), value, langOrDatatype);
+    } else {
+      return F.termLiteral(F.gen(), value, langOrDatatype);
+    }
+  }
+
+  static buildBlankNode(label: string): TermBlank {
+    return F.termBlank(label, F.gen());
+  }
 
   /**
    * @param aggregation The aggregation function to apply
@@ -16,143 +69,82 @@ export default class SparqlFactory {
    */
   static buildAggregateFunctionExpression(
     aggregation:string,
-    aggregatedVar:Variable,
-    asVar:Variable
-  ):VariableExpression {
-    var aggregateExpression:AggregateExpression = {
-        type: "aggregate",
-        aggregation: aggregation,
-        // always use a DISTINCT, so that we don't count duplicated results
-        // e.g. same result in different named graphs
-        distinct: true,
-        expression: aggregatedVar
-    }
-
+    aggregatedVar:TermVariable,
+    asVar:TermVariable
+  ):PatternBind {
     // group_concat will always use ";" as separator
-    if(aggregation.toLowerCase() === "group_concat") {
-      aggregateExpression.separator = "; ";
-    }  
+    let separator:string|undefined = (aggregation.toLowerCase() === "group_concat")?"; ":undefined;
 
-    return {
-      expression: aggregateExpression,
-      variable : asVar
-    }
+    // always use a DISTINCT, so that we don't count duplicated results
+    // e.g. same result in different named graphs
+    return F.patternBind(
+      F.aggregate(aggregation, true, aggregatedVar, separator, F.gen()),
+      asVar,
+      F.gen()
+    );
   }
 
-
-  static buildBgpPattern(triples: Triple[]): BgpPattern {
+  static buildBgpPattern(triples: TripleNesting[]): PatternBgp {
       if(triples.findIndex(t => (t == null)) > -1) {
         throw new Error("Trying to build a bgp pattern with null triple !");
       }
-      return {
-          type: "bgp",
-          triples: triples,
-      };
+      return F.patternBgp(triples, F.gen());
   }
 
-  static buildGroupPattern(patterns: Pattern[]):GroupPattern {
-      return {
-        type: "group",
-        patterns: patterns
-      };
+  static buildGroupPattern(patterns: Pattern[]):PatternGroup {
+      return F.patternGroup(patterns, F.gen());
   }
 
-  static buildUnionPattern(patterns: Pattern[]):UnionPattern {
-      return {
-        type: "union",
-        patterns: patterns
-      };
+  static buildUnionPattern(patterns: PatternGroup[]):PatternUnion {
+      return F.patternUnion(patterns, F.gen());
   }
 
-  static buildServicePattern(patterns:Pattern[],serviceIRI:IriTerm): ServicePattern {
-    return {
-      type:'service',
-      name:serviceIRI,
-      silent:false,
-      patterns: patterns
-    }
+  static buildServicePattern(patterns:Pattern[],serviceIRI:TermIri): PatternService {
+    return F.patternService(serviceIRI, patterns, false, F.gen());
   }
 
-  static buildSubQuery(patterns: Pattern[]):GroupPattern {
-    return {
-      type: "group",
-      patterns: [
-        {
-          type:"query",
-          queryType:"SELECT",
-          prefixes:{},
-          variables: [new Wildcard()],
-          where: patterns
-        }
-      ]
-    };
-}
-
-  static buildExistsPattern(groupPattern: GroupPattern): FilterPattern {
-      return {
-        type: "filter",
-        expression: {
-          type: "operation",
-          operator: "exists",
-          args: [
-              groupPattern
-          ],
-        },
-      };
+  static buildExistsPattern(groupPattern: PatternGroup): PatternFilter {
+      return F.patternFilter(
+        F.expressionPatternOperation("exists", groupPattern, F.gen()),
+        F.gen()
+      );
   }
 
-  static buildNotExistsPattern(groupPattern: GroupPattern): FilterPattern {
-      return {
-        type: "filter",
-        expression: {
-          type: "operation",
-          operator: "notexists",
-          args: [
-              groupPattern
-          ],
-        },
-      };
+  static buildNotExistsPattern(groupPattern: PatternGroup): PatternFilter {
+      return F.patternFilter(
+        F.expressionPatternOperation("notexists", groupPattern, F.gen()),
+        F.gen()
+      );
   }
 
-  static buildOptionalPattern(patterns: Pattern[]): OptionalPattern {
-      return {
-        type: "optional",
-        patterns: patterns,
-      };
+  static buildOptionalPattern(patterns: Pattern[]): PatternOptional {
+      return F.patternOptional(patterns, F.gen());
   }
 
-  static buildRegexOperation(texte: Literal, variable: Variable): OperationExpression {			
-    return {
-      type: "operation",
-      operator: "regex",
-      args: [
-        {
-          type: "operation",
-          operator: "str",
-          args: [ variable ]
-        },
+  static buildRegexOperation(texte: TermLiteral, variable: TermVariable): ExpressionOperation {
+    return F.expressionOperation(
+      "regex",
+      [
+        F.expressionOperation("str", [ variable ], F.gen()),
         texte,
-        factory.literal(`i`)
-      ]
-    };
+        SparqlFactory.buildLiteral(`i`)
+      ],
+      F.gen()
+    );
   }
 
-  static buildFilterLangEquals(variable: Variable, lang:Literal): FilterPattern {			
-    return {
-      type: "filter",
-      expression: {
-        type: "operation",
-        operator: "=",
-        args: [
-          {
-            type: "operation",
-            operator: "lang",
-            args: [ variable ]
-          },
+  static buildFilterLangEquals(variable: TermVariable, lang:TermLiteral): PatternFilter {
+    return F.patternFilter(
+      F.expressionOperation(
+        "=",
+        [
+          F.expressionOperation("lang", [ variable ], F.gen()),
           lang
         ],
-      },
-    };
+        F.gen()
+      ),
+      F.gen()
+    );
   }
 
   /**
@@ -161,68 +153,21 @@ export default class SparqlFactory {
    * @param finalVariable Finale variable of the BIND clause
    * @returns BIND(COALESCE(?var1, ?var2) AS ?finalVar)
    */
-  static buildBindCoalescePattern(firstVariable:Variable, secondvariable:Variable, finalVariable:Variable): BindPattern {				
-    return {
-        type: "bind",
-        expression: {
-          type: "operation",
-          operator: "coalesce",
-          args: [
-            firstVariable,
-            secondvariable
-          ]
-        },
-        variable:finalVariable
-      };
-  }
-
-  static buildFilterStrInOrEquals(values: Literal[], variable: Variable): FilterPattern {			
-    if(values.length == 1) {
-      return {
-        type: "filter",
-        expression: {
-          type: "operation",
-          operator: "=",
-          args: [
-            {
-              type: "operation",
-              operator: "str",
-              args: [ variable ]
-            },
-            values[0]
-          ],
-        },
-      };
-    } else {
-      return {
-        type: "filter",
-        expression: {
-          type: "operation",
-          operator: "in",
-          args: [
-            {
-              type: "operation",
-              operator: "str",
-              args: [ variable ]
-            },
-            values
-          ],
-        },
-      };
-    }
-
+  static buildBindCoalescePattern(firstVariable:TermVariable, secondvariable:TermVariable, finalVariable:TermVariable): PatternBind {
+    return F.patternBind(
+      F.expressionOperation("coalesce", [ firstVariable, secondvariable ], F.gen()),
+      finalVariable,
+      F.gen()
+    );
   }
 
   /**
    * Wraps the given operations in a filter with an OR operator
    * @param operations a flat array or operations
-   * @returns 
+   * @returns
    */
-  static buildFilterOr(operations: OperationExpression[]): FilterPattern {			
-    return {
-      type: "filter",
-      expression: SparqlFactory.combineWithOr(operations)
-    } ;      
+  static buildFilterOr(operations: ExpressionOperation[]): PatternFilter {
+    return F.patternFilter(SparqlFactory.combineWithOr(operations), F.gen());
   }
 
   /**
@@ -230,135 +175,89 @@ export default class SparqlFactory {
    * @param operations a flet array or operations
    * @returns a hierarchy of || operations, each having 2 args
    */
-  static combineWithOr(operations: OperationExpression[]): OperationExpression {			
+  static combineWithOr(operations: ExpressionOperation[]): ExpressionOperation {
     if(operations.length == 1) {
-      return operations[0];     
+      return operations[0];
     } else if(operations.length == 2) {
-      return {
-        type: "operation",
-        operator: "||",
-        args: operations
-      };
+      return F.expressionOperation("||", operations, F.gen());
     } else {
-      return {
-        type: "operation",
-        operator: "||",
-        args: [
+      return F.expressionOperation(
+        "||",
+        [
           operations[0],
           SparqlFactory.combineWithOr(operations.slice(1))
-        ]
-      };
+        ],
+        F.gen()
+      );
     }
   }
 
   /**
    * Builds an operation expression that compares the lowercase of a variable with the lowercase of a literal
-   * @param texte 
-   * @param variable 
-   * @returns 
+   * @param texte
+   * @param variable
+   * @returns
    */
-  static buildOperationLcaseEquals(texte: Literal, variable: Variable): OperationExpression {			
-    return {
-        type: "operation",
-        operator: "=",
-        args: [					
-          {
-            type: "operation",
-            operator: "lcase",
-            args : [ variable ]
-          },
-          {
-            type: "operation",
-            operator: "lcase",
-            args : [texte]
-          }
-        ]
-    };
+  static buildOperationLcaseEquals(texte: TermLiteral, variable: TermVariable): ExpressionOperation {
+    return F.expressionOperation(
+      "=",
+      [
+        F.expressionOperation("lcase", [ variable ], F.gen()),
+        F.expressionOperation("lcase", [ texte ], F.gen())
+      ],
+      F.gen()
+    );
   }
 
-
+  /**
+   * Builds a filter on a function call, e.g. FILTER(geof:sfWithin(?x, "..."))
+   * @param functionIri The IRI of the function to call
+   * @param args The arguments of the function
+   */
+  static buildFilterFunctionCall(functionIri: string, args: Expression[]): PatternFilter {
+    return F.patternFilter(
+      F.expressionFunctionCall(SparqlFactory.buildNamedNode(functionIri), args, false, F.gen()),
+      F.gen()
+    );
+  }
 
   static buildFilterRangeDateOrNumber(
-      rangeBegin: Literal|null,
-      rangeEnd: Literal|null,
-      variable: Variable
-  ): Pattern {
-      
-      var filters = new Array ;
-      
+      rangeBegin: TermLiteral|null,
+      rangeEnd: TermLiteral|null,
+      variable: TermVariable
+  ): PatternFilter {
+
+      var filters: ExpressionOperation[] = [] ;
+
       if (rangeBegin != null) {
-        filters.push( {
-          type: "operation",
-          operator: ">=",
-          args: [
-            variable,
-            rangeBegin
-          ]
-        }) ;
+        filters.push(F.expressionOperation(">=", [ variable, rangeBegin ], F.gen())) ;
       }
       if (rangeEnd != null) {
-        filters.push( {
-          type: "operation",
-          operator: "<=",
-          args: [
-            variable,
-            rangeEnd
-          ]
-        }) ;
+        filters.push(F.expressionOperation("<=", [ variable, rangeEnd ], F.gen())) ;
       }
-    
+
       if (filters.length == 2 ) {
-        return {
-          type: "filter",
-          expression: {
-            type: 'operation',
-            operator: "&&",
-            args: filters
-          }
-        } ;
+        return F.patternFilter(F.expressionOperation("&&", filters, F.gen()), F.gen()) ;
       } else {
-        return {
-          type: "filter",
-          expression: filters[0]
-        } ;
+        return F.patternFilter(filters[0], F.gen()) ;
       }
-    
+
     }
 
 
   static buildTriple(
-    subject: IriTerm | BlankTerm | VariableTerm | QuadTerm,
-    predicate: IriTerm | VariableTerm | PropertyPath,
-    object: Term
-  ):Triple {
-    return {
-        subject: subject,
-        predicate: predicate,
-        object: object,
-    };
-  }
-
-  static buildPropertyPathTriple(
-    subject: IriTerm | BlankTerm | VariableTerm | QuadTerm,
-    predicate: IriTerm | PropertyPath,
-    object: Term 
-  ):Triple {
-    return {
-      subject: subject,
-      predicate: {
-        type: 'path',
-        pathType:'*' ,
-        items: [predicate]
-      },
-      object: object,
-    };
+    subject: GraphNode,
+    predicate: TermIri | TermVariable | Path,
+    object: GraphNode
+  ):TripleNesting {
+    return F.triple(subject, predicate, object, F.gen());
   }
 
   static buildTypeTriple(
-    subject: IriTerm | BlankTerm | VariableTerm | QuadTerm,
-    predicate: IriTerm | PropertyPath,
-    object: Term
-  ): Triple | null {
+    subject: TermVariable,
+    predicate: TermIri | Path,
+    object: TermIri
+  ): TripleNesting | null {
     if(!subject?.value || !object?.value) return null
     return SparqlFactory.buildTriple(
         subject,
@@ -366,46 +265,46 @@ export default class SparqlFactory {
         object
     );
   }
-      
+
   // It is the intersection between the startclass and endclass chosen.
   // example: ?person dpedia:birthplace ?country
   static buildIntersectionTriple(
-    subj: Variable,
+    subj: TermVariable,
     pred: string,
-    obj: Variable
-  ): Triple | null{
+    obj: TermVariable
+  ): TripleNesting | null{
     if(!subj?.value || !pred || !obj?.value) return null
-    return {
-      subject: subj as VariableTerm,
-      predicate: factory.namedNode(pred),
-      object: obj as VariableTerm,
-    };
+    return SparqlFactory.buildTriple(
+      subj,
+      SparqlFactory.buildNamedNode(pred),
+      obj
+    );
   }
-  
-  static parsePropertyPath(path:string): IriTerm | PropertyPath {
-    return this.sparqlParser.parse(path) as unknown as IriTerm | PropertyPath
+
+  static parsePropertyPath(path:string): TermIri | Path {
+    return this.sparqlParser.parsePath(path);
   }
 
   static buildDateRangePattern(
-    startDate: Literal,
-    endDate: Literal,
-    startClassVar: Variable,
-    beginDatePred: NamedNode,
-    endDatePred: NamedNode,
-    objectVariable: Variable
-  ): Pattern {
-    
+    startDate: TermLiteral,
+    endDate: TermLiteral,
+    startClassVar: TermVariable,
+    beginDatePred: TermIriFull,
+    endDatePred: TermIriFull,
+    objectVariable: TermVariable
+  ): PatternGroup | PatternUnion {
+
     // we have provided both begin and end date criteria
     if(startDate != null && endDate != null) {
-      
+
       // 1. case where the resource has both start date and end date
-      let firstAlternative:GroupPattern = SparqlFactory.buildGroupPattern([]);
-  
-      let bgp:BgpPattern = SparqlFactory.buildBgpPattern([]);
-      
-      let beginDateVarName = factory.variable(objectVariable.value+`_begin`);
-      let endDateVarName = factory.variable(objectVariable.value+`_end`);
-  
+      let firstAlternative:PatternGroup = SparqlFactory.buildGroupPattern([]);
+
+      let bgp:PatternBgp = SparqlFactory.buildBgpPattern([]);
+
+      let beginDateVarName = SparqlFactory.buildVariable(objectVariable.value+`_begin`);
+      let endDateVarName = SparqlFactory.buildVariable(objectVariable.value+`_end`);
+
       bgp.triples.push(
         SparqlFactory.buildTriple(
           startClassVar,
@@ -413,7 +312,7 @@ export default class SparqlFactory {
           beginDateVarName
         )
       );
-  
+
       bgp.triples.push(
         SparqlFactory.buildTriple(
           startClassVar,
@@ -421,18 +320,18 @@ export default class SparqlFactory {
           endDateVarName
         )
       );
-  
+
       firstAlternative.patterns.push(bgp);
-  
+
       // begin date is before given end date
       firstAlternative.patterns.push(SparqlFactory.buildFilterRangeDateOrNumber(null, endDate, beginDateVarName));
       // end date is after given start date
       firstAlternative.patterns.push(SparqlFactory.buildFilterRangeDateOrNumber(startDate, null, endDateVarName));
-        
+
       // 2. case where the resource has only a start date
-      let secondAlternative:GroupPattern = SparqlFactory.buildGroupPattern([]);
-  
-      let secondBgp:BgpPattern = SparqlFactory.buildBgpPattern([]);
+      let secondAlternative:PatternGroup = SparqlFactory.buildGroupPattern([]);
+
+      let secondBgp:PatternBgp = SparqlFactory.buildBgpPattern([]);
       secondBgp.triples.push(
         SparqlFactory.buildTriple(
           startClassVar,
@@ -456,14 +355,14 @@ export default class SparqlFactory {
           ]
         )
       );
-  
+
       secondAlternative.patterns.push(notExistsEndDate);
       // begin date is before given end date
       secondAlternative.patterns.push(SparqlFactory.buildFilterRangeDateOrNumber(null, endDate, beginDateVarName));
-      
+
       // 3. case where the resource has only a end date
-      let thirdAlternative:GroupPattern = SparqlFactory.buildGroupPattern([]);
-      let thirdBgp:BgpPattern = SparqlFactory.buildBgpPattern([]);
+      let thirdAlternative:PatternGroup = SparqlFactory.buildGroupPattern([]);
+      let thirdBgp:PatternBgp = SparqlFactory.buildBgpPattern([]);
       thirdBgp.triples.push(
         SparqlFactory.buildTriple(
           startClassVar,
@@ -472,7 +371,7 @@ export default class SparqlFactory {
         )
       );
       thirdAlternative.patterns.push(thirdBgp);
-  
+
       let notExistsBeginDate = SparqlFactory.buildNotExistsPattern(
         SparqlFactory.buildGroupPattern(
           [
@@ -488,17 +387,17 @@ export default class SparqlFactory {
           ]
         )
       );
-  
+
       thirdAlternative.patterns.push(notExistsBeginDate);
       // end date is after given start date
       thirdAlternative.patterns.push(SparqlFactory.buildFilterRangeDateOrNumber(startDate, null, endDateVarName));
-  
-  
-      return SparqlFactory.buildUnionPattern([firstAlternative, secondAlternative, thirdAlternative]); 
+
+
+      return SparqlFactory.buildUnionPattern([firstAlternative, secondAlternative, thirdAlternative]);
     // we have provided only a start date
     } else if(startDate != null && endDate === null) {
-      
-      let endDateVarName = factory.variable(objectVariable.value+"_end");
+
+      let endDateVarName = SparqlFactory.buildVariable(objectVariable.value+"_end");
       var bgp = SparqlFactory.buildBgpPattern([
         SparqlFactory.buildTriple(
           startClassVar,
@@ -506,18 +405,18 @@ export default class SparqlFactory {
           endDateVarName
         )
       ]);
-  
+
       // end date is after given start date
       var filter = SparqlFactory.buildFilterRangeDateOrNumber(startDate, null, endDateVarName);
-  
+
       // if the resource has no end date, and has only a start date
       // then it necessarily overlaps with the provided open-ended range
       // so let's avoid this case for the moment
       return SparqlFactory.buildGroupPattern([bgp,filter]);
-  
+
     // we have provided only a end date
     } else if(startDate === null && endDate != null) {
-      let beginDateVarName = factory.variable(objectVariable.value+"_begin");
+      let beginDateVarName = SparqlFactory.buildVariable(objectVariable.value+"_begin");
       var bgp = SparqlFactory.buildBgpPattern([
         SparqlFactory.buildTriple(
           startClassVar,
@@ -527,25 +426,25 @@ export default class SparqlFactory {
       ]);
       // begin date is before given end date
       var filter = SparqlFactory.buildFilterRangeDateOrNumber(null, endDate, beginDateVarName);
-  
+
       return SparqlFactory.buildGroupPattern([bgp,filter]);
-    }   
+    }
   };
 
   static buildDateRangeOrExactDatePattern(
-    startDate: Literal,
-    endDate: Literal,
-    startClassVar: Variable,
-    beginDatePred: NamedNode,
-    endDatePred: NamedNode,
-    exactDatePred: NamedNode,
-    objectVariable: Variable
-  ): Pattern{
-    
+    startDate: TermLiteral,
+    endDate: TermLiteral,
+    startClassVar: TermVariable,
+    beginDatePred: TermIriFull,
+    endDatePred: TermIriFull,
+    exactDatePred: TermIriFull,
+    objectVariable: TermVariable
+  ): PatternGroup | PatternUnion {
+
     if(exactDatePred != null) {
-  
+
       // first alternative of the union to test exact date
-      let exactDateVarName = factory.variable(objectVariable.value+"_exact");
+      let exactDateVarName = SparqlFactory.buildVariable(objectVariable.value+"_exact");
       let firstAlternative = SparqlFactory.buildGroupPattern(
         [
           SparqlFactory.buildBgpPattern(
@@ -565,31 +464,38 @@ export default class SparqlFactory {
           )
         ]
       );
-  
+
       // second alternative to test date range
       let secondAlternative = SparqlFactory.buildDateRangePattern(
         startDate,
         endDate,
         startClassVar,
         beginDatePred,
-        endDatePred,      
+        endDatePred,
         objectVariable
       );
-  
+
       // return as an array so that caller can have generic forEach loop to all
       // every element to outer query
-      return SparqlFactory.buildUnionPattern([firstAlternative, secondAlternative]); 
+      return SparqlFactory.buildUnionPattern([firstAlternative, SparqlFactory.#asGroup(secondAlternative)]);
     } else {
       return SparqlFactory.buildDateRangePattern(
         startDate,
         endDate,
         startClassVar,
         beginDatePred,
-        endDatePred,      
+        endDatePred,
         objectVariable
       );
     }
   }
 
-}
+  /**
+   * The members of a Traqula UNION must be groups
+   * @returns the pattern itself if it is a group, or a group wrapping it otherwise
+   */
+  static #asGroup(pattern: PatternGroup | PatternUnion): PatternGroup {
+    return (pattern.subType === "group")?pattern:SparqlFactory.buildGroupPattern([pattern]);
+  }
 
+}

@@ -27,7 +27,6 @@ interface  SparnaturalEvent extends Event {
   detail?:{
     queryString:string,
     queryJson:string,
-    querySparqlJs:string
   }
 }
 
@@ -38,7 +37,6 @@ function App() {
       sparnaturalRef?.current?.addEventListener("queryUpdated", (event:SparnaturalEvent) => {
         console.log(event?.detail?.queryString);
         console.log(event?.detail?.queryJson);
-        console.log(event?.detail?.querySparqlJs);
         // here : don't forget to call expandSparql so that core:sparqlString annotation is taken into account
      });
     },

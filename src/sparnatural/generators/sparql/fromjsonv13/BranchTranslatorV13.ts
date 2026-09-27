@@ -1,9 +1,6 @@
-import { DataFactory } from "rdf-data-factory";
-import { Pattern, Variable } from "sparqljs";
-import { ISparnaturalSpecification } from "../../../spec-providers/ISparnaturalSpecification";
+import { Pattern, TermVariable } from "@traqula/rules-sparql-1-1";
 import SparqlFactory from "../SparqlFactory";
 import ValueBuilderIfc, { ValueBuilderFactory } from "../ValueBuilder";
-import TypedVariableTranslator from "../../sparql/fromjson/TypedVariableTranslator";
 
 import {
   PredicateObjectPair,
@@ -24,10 +21,8 @@ import {
 import TypedVariableTranslatorV13 from "./TypedVariableTranslatorV13";
 import { JsonV13SparqlTranslator } from "./JsonV13SparqlTranslator";
 
-const factory = new DataFactory();
-
 /**
- * Translates a v13 PredicateObjectPair (+ its ObjectCriteria) into SparqlJs patterns
+ * Translates a v13 PredicateObjectPair (+ its ObjectCriteria) into Traqula patterns
  * while keeping the same internal logic as the legacy BranchTranslator.
  */
 export default class BranchTranslatorV13 {
@@ -64,7 +59,7 @@ export default class BranchTranslatorV13 {
   #resultPtrns: Pattern[] = [];
 
   // default vars gathered from this branch + children
-  #defaultLabelVars: Variable[] = [];
+  #defaultLabelVars: TermVariable[] = [];
 
   #hasValues = false;
 
@@ -215,7 +210,7 @@ export default class BranchTranslatorV13 {
     // if there was any default label patterns generated, gather the variable names of the default label
     if (typeTranslator.defaultLblPatterns.length > 0) {
       this.#defaultLabelVars.push(
-        factory.variable(typeTranslator.defaultLabelVarName),
+        SparqlFactory.buildVariable(typeTranslator.defaultLabelVarName),
       );
     }
   }
@@ -244,7 +239,7 @@ export default class BranchTranslatorV13 {
     this.#endClassPtrn = typeTranslator.resultPtrns;
     if (typeTranslator.defaultLblPatterns.length > 0) {
       this.#defaultLabelVars.push(
-        factory.variable(typeTranslator.defaultLabelVarName),
+        SparqlFactory.buildVariable(typeTranslator.defaultLabelVarName),
       );
     }
   }
@@ -266,9 +261,9 @@ export default class BranchTranslatorV13 {
           SparqlFactory.buildOptionalPattern([
             SparqlFactory.buildBgpPattern([
               SparqlFactory.buildIntersectionTriple(
-                factory.variable(this.#s),
+                SparqlFactory.buildVariable(this.#s),
                 specProperty.getBeginDateProperty(),
-                factory.variable(`${this.#o}_begin`),
+                SparqlFactory.buildVariable(`${this.#o}_begin`),
               ),
             ]),
           ]),
@@ -280,9 +275,9 @@ export default class BranchTranslatorV13 {
           SparqlFactory.buildOptionalPattern([
             SparqlFactory.buildBgpPattern([
               SparqlFactory.buildIntersectionTriple(
-                factory.variable(this.#s),
+                SparqlFactory.buildVariable(this.#s),
                 specProperty.getEndDateProperty(),
-                factory.variable(`${this.#o}_end`),
+                SparqlFactory.buildVariable(`${this.#o}_end`),
               ),
             ]),
           ]),
@@ -294,9 +289,9 @@ export default class BranchTranslatorV13 {
           SparqlFactory.buildOptionalPattern([
             SparqlFactory.buildBgpPattern([
               SparqlFactory.buildIntersectionTriple(
-                factory.variable(this.#s),
+                SparqlFactory.buildVariable(this.#s),
                 specProperty.getExactDateProperty(),
-                factory.variable(`${this.#o}_exact`),
+                SparqlFactory.buildVariable(`${this.#o}_exact`),
               ),
             ]),
           ]),
@@ -307,9 +302,9 @@ export default class BranchTranslatorV13 {
       this.#intersectionPtrn.push(
         SparqlFactory.buildBgpPattern([
           SparqlFactory.buildIntersectionTriple(
-            factory.variable(this.#s),
+            SparqlFactory.buildVariable(this.#s),
             this.#p,
-            factory.variable(this.#o),
+            SparqlFactory.buildVariable(this.#o),
           ),
         ]),
       );
@@ -318,8 +313,8 @@ export default class BranchTranslatorV13 {
     if (specProperty.isMultilingual()) {
       this.#intersectionPtrn.push(
         SparqlFactory.buildFilterLangEquals(
-          factory.variable(this.#o),
-          factory.literal(this.#translator.settings.language),
+          SparqlFactory.buildVariable(this.#o),
+          SparqlFactory.buildLiteral(this.#translator.settings.language),
         ),
       );
     }
@@ -359,7 +354,7 @@ export default class BranchTranslatorV13 {
       ?.getServiceEndpoint();
 
     let servicePtrn: Pattern | null = null;
-    const endpoint = factory.namedNode(sparqlService);
+    const endpoint = SparqlFactory.buildNamedNode(sparqlService);
     if (sparqlService && exceptStartPtrn.length > 0) {
       servicePtrn = SparqlFactory.buildServicePattern(
         exceptStartPtrn,
@@ -408,7 +403,7 @@ export default class BranchTranslatorV13 {
     return this.#resultPtrns;
   }
 
-  getDefaultLabelVars(): Variable[] {
+  getDefaultLabelVars(): TermVariable[] {
     return this.#defaultLabelVars;
   }
 

@@ -1,5 +1,4 @@
-import { DataFactory, NamedNode } from "rdf-data-factory";
-import { Pattern, Triple, VariableExpression, VariableTerm } from "sparqljs";
+import { Pattern, TripleNesting } from "@traqula/rules-sparql-1-1";
 import SparqlFactory from "../SparqlFactory";
 import ISpecificationProperty from "../../../spec-providers/ISpecificationProperty";
 import { Model, NodeShape, OWL, PropertyShape, RDFS } from "rdf-shacl-commons";
@@ -9,8 +8,6 @@ import { PredicateObjectPair, SelectVariable, TermTypedVariable } from "../../..
 import { JsonV13SparqlTranslator } from "./JsonV13SparqlTranslator";
 import { SHACLSpecificationProperty } from "../../../spec-providers/shacl/SHACLSpecificationProperty";
 import { SparnaturalQueryUtils } from "./SparnaturalQueryUtils";
-
-const factory = new DataFactory();
 
 /**
  * Converts a variable with a type into the corresponding SPARQL pattern. The variables and type
@@ -36,7 +33,7 @@ export default class TypedVariableTranslatorV13 {
   // can consist of multiple patterns in case there is a FILTER(lang(?var) = "xx") if the property is multilingual
   public defaultLblPatterns: Pattern[] = [];
   // the rdf:type triple
-  #typeTriple: Triple;
+  #typeTriple: TripleNesting;
   // whether the property is blocking the generation of the type triple (but not the default label triples)
   #propertyIsBlocking: boolean;
 
@@ -81,7 +78,7 @@ export default class TypedVariableTranslatorV13 {
             this.#translator.settings.typePredicate,
           );
         } else {
-          typePredicate = factory.namedNode(
+          typePredicate = SparqlFactory.buildNamedNode(
             "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
           );
         }
@@ -92,9 +89,9 @@ export default class TypedVariableTranslatorV13 {
           this.#variableType !== OWL.THING.value
         ) {
           this.#typeTriple = SparqlFactory.buildTypeTriple(
-            factory.variable(this.#variableName),
+            SparqlFactory.buildVariable(this.#variableName),
             typePredicate,
-            factory.namedNode(this.#variableType),
+            SparqlFactory.buildNamedNode(this.#variableType),
           );
           //console.log(`Added type triple for ${this.#variableName}`);
         } else {
@@ -128,17 +125,17 @@ export default class TypedVariableTranslatorV13 {
         this.defaultLblPatterns.push(
           SparqlFactory.buildBgpPattern([
             SparqlFactory.buildTriple(
-              factory.variable(this.#variableName),
-              factory.namedNode(defaultLabelProp.getId()),
-              factory.variable(this.defaultLabelVarName),
+              SparqlFactory.buildVariable(this.#variableName),
+              SparqlFactory.buildNamedNode(defaultLabelProp.getId()),
+              SparqlFactory.buildVariable(this.defaultLabelVarName),
             ),
           ]),
         );
         // FILTER(?Person_1_label = "fr")
         this.defaultLblPatterns.push(
           SparqlFactory.buildFilterLangEquals(
-            factory.variable(this.defaultLabelVarName),
-            factory.literal(this.#translator.settings.language),
+            SparqlFactory.buildVariable(this.defaultLabelVarName),
+            SparqlFactory.buildLiteral(this.#translator.settings.language),
           ),
         );
       } else {
@@ -150,14 +147,14 @@ export default class TypedVariableTranslatorV13 {
           SparqlFactory.buildOptionalPattern([
             SparqlFactory.buildBgpPattern([
               SparqlFactory.buildTriple(
-                factory.variable(this.#variableName),
-                factory.namedNode(defaultLabelProp.getId()),
-                factory.variable(this.defaultLabelVarName + "_lang"),
+                SparqlFactory.buildVariable(this.#variableName),
+                SparqlFactory.buildNamedNode(defaultLabelProp.getId()),
+                SparqlFactory.buildVariable(this.defaultLabelVarName + "_lang"),
               ),
             ]),
             SparqlFactory.buildFilterLangEquals(
-              factory.variable(this.defaultLabelVarName + "_lang"),
-              factory.literal(this.#translator.settings.language),
+              SparqlFactory.buildVariable(this.defaultLabelVarName + "_lang"),
+              SparqlFactory.buildLiteral(this.#translator.settings.language),
             ),
           ]),
         );
@@ -167,14 +164,14 @@ export default class TypedVariableTranslatorV13 {
           SparqlFactory.buildOptionalPattern([
             SparqlFactory.buildBgpPattern([
               SparqlFactory.buildTriple(
-                factory.variable(this.#variableName),
-                factory.namedNode(defaultLabelProp.getId()),
-                factory.variable(this.defaultLabelVarName + "_defaultLang"),
+                SparqlFactory.buildVariable(this.#variableName),
+                SparqlFactory.buildNamedNode(defaultLabelProp.getId()),
+                SparqlFactory.buildVariable(this.defaultLabelVarName + "_defaultLang"),
               ),
             ]),
             SparqlFactory.buildFilterLangEquals(
-              factory.variable(this.defaultLabelVarName + "_defaultLang"),
-              factory.literal(this.#translator.settings.defaultLanguage),
+              SparqlFactory.buildVariable(this.defaultLabelVarName + "_defaultLang"),
+              SparqlFactory.buildLiteral(this.#translator.settings.defaultLanguage),
             ),
           ]),
         );
@@ -182,9 +179,9 @@ export default class TypedVariableTranslatorV13 {
         // BIND(COALESCE(?Person_1_label,?Person_1_defaultLabel) AS ?Person_1_label)
         this.defaultLblPatterns.push(
           SparqlFactory.buildBindCoalescePattern(
-            factory.variable(this.defaultLabelVarName + "_lang"),
-            factory.variable(this.defaultLabelVarName + "_defaultLang"),
-            factory.variable(this.defaultLabelVarName),
+            SparqlFactory.buildVariable(this.defaultLabelVarName + "_lang"),
+            SparqlFactory.buildVariable(this.defaultLabelVarName + "_defaultLang"),
+            SparqlFactory.buildVariable(this.defaultLabelVarName),
           ),
         );
       }
@@ -196,9 +193,9 @@ export default class TypedVariableTranslatorV13 {
       this.defaultLblPatterns.push(
         SparqlFactory.buildBgpPattern([
           SparqlFactory.buildTriple(
-            factory.variable(this.#variableName),
-            factory.namedNode(defaultLabelProp.getId()),
-            factory.variable(this.defaultLabelVarName),
+            SparqlFactory.buildVariable(this.#variableName),
+            SparqlFactory.buildNamedNode(defaultLabelProp.getId()),
+            SparqlFactory.buildVariable(this.defaultLabelVarName),
           ),
         ]),
       );
