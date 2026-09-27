@@ -1,12 +1,9 @@
 import { DataFactory } from 'rdf-data-factory';
 import { Config } from "../../ontologies/SparnaturalConfig";
 import { ISparnaturalSpecification } from "../ISparnaturalSpecification";
-import {
-  Parser,
-  Generator,
-  SparqlParser,
-  SparqlGenerator
-} from "sparqljs";
+import { Parser } from "@traqula/parser-sparql-1-1";
+import { AstFactory, AstTransformer, ContextDefinition, Query, TermIri } from "@traqula/rules-sparql-1-1";
+import { SparqlGeneratorV13 } from "../../generators/sparql/fromjsonv13/SparqlGeneratorV13";
 import { ISpecificationEntity } from "../ISpecificationEntity";
 import { OWLSpecificationEntity } from "./OWLSpecificationEntity";
 import ISpecificationProperty from "../ISpecificationProperty";
@@ -18,6 +15,7 @@ import { BaseRdfStore } from '../BaseRdfStore';
 import { RDFS } from 'rdf-shacl-commons';
 
 const factory = new DataFactory();
+const F = new AstFactory();
 
 const OWL_NAMESPACE = "http://www.w3.org/2002/07/owl#";
 export const OWL = {
@@ -28,15 +26,20 @@ export const OWL = {
 };
 
 export class OWLSpecificationProvider extends BaseRdfStore implements ISparnaturalSpecification {
-  #parser: SparqlParser;
-  #generator: SparqlGenerator;
+  #parser: Parser;
+  #generator: SparqlGeneratorV13;
 
   constructor(n3store: RdfStore, lang: string) {
     super(n3store, lang);
 
     // init SPARQL parser and generator once
-    this.#parser = new Parser();
-    this.#generator = new Generator();
+    // keep track of the position of each node in the query, so that the generator can output the parts
+    // of the query that were not modified exactly as they were (including comments)
+    this.#parser = new Parser({
+      defaultContext: { astFactory: F },
+      lexerConfig: { positionTracking: "full" },
+    });
+    this.#generator = new SparqlGeneratorV13();
 
     /*
     var sparql = `
@@ -277,13 +280,79 @@ export class OWLSpecificationProvider extends BaseRdfStore implements ISparnatur
 
 
     // reparse the query, apply prefixes, and reserialize the query
-    var query = this.#parser.parse(sparql);
-    for (var key in prefixes) {
-        query.prefixes[key] = prefixes[key];
-    }
-    
-    let finalString = this.#generator.stringify(query);
+    var query = <Query> this.#parser.parse(sparql);
+    let finalString = this.#generator.generate(this.#applyPrefixes(query, prefixes), { origSource: sparql });
     return finalString
+  }
+
+  /**
+   * Uses prefixed names in the query wherever possible, like SparqlJs does when serializing a query.
+   * Only the modified nodes are marked to be generated again, the rest of the query is kept as it was.
+   * @param query The parsed query
+   * @param prefixes The prefixes to use, in addition to the ones declared in the query (and overriding them)
+   * @returns the query, with prefixed names, declaring only the prefixes it uses
+   */
+  #applyPrefixes(query: Query, prefixes: { [key: string]: string }): Query {
+    // the prefixes declared in the query
+    let queryPrefixes: { [key: string]: string } = {};
+    query.context.forEach((c) => {
+      if (c.subType === "prefix") queryPrefixes[c.key] = c.value.value;
+    });
+    let allPrefixes: { [key: string]: string } = { ...queryPrefixes, ...prefixes };
+
+    // if multiple prefixes share the same namespace, the last one is used
+    let prefixByNamespace = new Map<string, string>();
+    Object.entries(allPrefixes).forEach(([prefix, namespace]) => prefixByNamespace.set(namespace, prefix));
+
+    let usedPrefixes = new Set<string>();
+    let compactedQuery = new AstTransformer().transformNodeSpecific<"unsafe", Query>(query, {}, {
+      term: {
+        namedNode: {
+          transform: (iri: TermIri) => {
+            // expand the prefixed names of the query
+            let fullIri = F.isTermNamedPrefixed(iri) ? queryPrefixes[iri.prefix] + iri.value : iri.value;
+            let prefix: string | undefined;
+            let localName: string | undefined;
+            for (let namespace of Object.values(allPrefixes)) {
+              // same local names as the ones SparqlJs turns into prefixed names
+              if (fullIri.startsWith(namespace) && /^[a-zA-Z][\-_a-zA-Z0-9]*$/.test(fullIri.substring(namespace.length))) {
+                prefix = prefixByNamespace.get(namespace);
+                localName = fullIri.substring(namespace.length);
+                usedPrefixes.add(prefix);
+                break;
+              }
+            }
+
+            let originalPrefix = F.isTermNamedPrefixed(iri) ? iri.prefix : undefined;
+            if (prefix === originalPrefix && (prefix ? localName : fullIri) === iri.value) {
+              // unchanged
+              return iri;
+            }
+            return prefix
+              ? F.termNamed(F.sourceLocationNodeReplaceUnsafe(iri.loc), localName, prefix)
+              : F.termNamed(F.sourceLocationNodeReplaceUnsafe(iri.loc), fullIri);
+          },
+        },
+      },
+    });
+
+    // declare only the prefixes used in the query
+    let context: ContextDefinition[] = compactedQuery.context.map((c) => {
+      if (c.subType !== "prefix" || (usedPrefixes.has(c.key) && allPrefixes[c.key] === c.value.value)) {
+        return c;
+      }
+      if (usedPrefixes.has(c.key)) {
+        // the namespace of the prefix was overridden
+        return F.contextDefinitionPrefix(F.sourceLocationNodeReplaceUnsafe(c.loc), c.key, F.termNamed(F.gen(), allPrefixes[c.key]));
+      }
+      // an unused prefix is removed from the query string
+      return F.isSourceLocationSource(c.loc) ? { ...c, loc: F.sourceLocationStringReplace("", c.loc.start, c.loc.end) } : null;
+    }).filter((c) => c !== null);
+    Object.entries(prefixes)
+      .filter(([prefix]) => usedPrefixes.has(prefix) && !(prefix in queryPrefixes))
+      .forEach(([prefix, namespace]) => context.push(F.contextDefinitionPrefix(F.gen(), prefix, F.termNamed(F.gen(), namespace))));
+    compactedQuery.context = context;
+    return compactedQuery;
   }
 
   _sort(items: any[]) {
