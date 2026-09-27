@@ -3,7 +3,7 @@ import { Config } from "../../ontologies/SparnaturalConfig";
 import { ISparnaturalSpecification } from "../ISparnaturalSpecification";
 import { Parser } from "@traqula/parser-sparql-1-1";
 import { AstFactory, AstTransformer, ContextDefinition, Query, TermIri } from "@traqula/rules-sparql-1-1";
-import { SparqlGeneratorV13 } from "../../generators/sparql/fromjsonv13/SparqlGeneratorV13";
+import { SparqlGenerator } from "../../generators/sparql/SparqlGenerator";
 import { ISpecificationEntity } from "../ISpecificationEntity";
 import { OWLSpecificationEntity } from "./OWLSpecificationEntity";
 import ISpecificationProperty from "../ISpecificationProperty";
@@ -27,7 +27,7 @@ export const OWL = {
 
 export class OWLSpecificationProvider extends BaseRdfStore implements ISparnaturalSpecification {
   #parser: Parser;
-  #generator: SparqlGeneratorV13;
+  #generator: SparqlGenerator;
 
   constructor(n3store: RdfStore, lang: string) {
     super(n3store, lang);
@@ -39,7 +39,7 @@ export class OWLSpecificationProvider extends BaseRdfStore implements ISparnatur
       defaultContext: { astFactory: F },
       lexerConfig: { positionTracking: "full" },
     });
-    this.#generator = new SparqlGeneratorV13();
+    this.#generator = new SparqlGenerator();
 
     /*
     var sparql = `
@@ -286,7 +286,7 @@ export class OWLSpecificationProvider extends BaseRdfStore implements ISparnatur
   }
 
   /**
-   * Uses prefixed names in the query wherever possible, like SparqlJs does when serializing a query.
+   * Uses prefixed names in the query wherever possible.
    * Only the modified nodes are marked to be generated again, the rest of the query is kept as it was.
    * @param query The parsed query
    * @param prefixes The prefixes to use, in addition to the ones declared in the query (and overriding them)
@@ -314,7 +314,7 @@ export class OWLSpecificationProvider extends BaseRdfStore implements ISparnatur
             let prefix: string | undefined;
             let localName: string | undefined;
             for (let namespace of Object.values(allPrefixes)) {
-              // same local names as the ones SparqlJs turns into prefixed names
+              // only simple local names are turned into prefixed names
               if (fullIri.startsWith(namespace) && /^[a-zA-Z][\-_a-zA-Z0-9]*$/.test(fullIri.substring(namespace.length))) {
                 prefix = prefixByNamespace.get(namespace);
                 localName = fullIri.substring(namespace.length);

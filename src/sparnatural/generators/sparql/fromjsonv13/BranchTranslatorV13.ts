@@ -1,6 +1,6 @@
 import { Pattern, TermVariable } from "@traqula/rules-sparql-1-1";
-import SparqlFactoryV13 from "./SparqlFactoryV13";
-import ValueBuilderIfcV13, { ValueBuilderFactoryV13 } from "./ValueBuilderV13";
+import SparqlFactory from "../SparqlFactory";
+import ValueBuilderIfc, { ValueBuilderFactory } from "../ValueBuilder";
 
 import {
   PredicateObjectPair,
@@ -45,7 +45,7 @@ export default class BranchTranslatorV13 {
   #oType: string;
 
   // to translate widget values to SPARQL
-  #valueBuilder!: ValueBuilderIfcV13;
+  #valueBuilder!: ValueBuilderIfc;
 
   // intermediate patterns
   #startClassPtrn: Pattern[] = [];
@@ -100,7 +100,7 @@ export default class BranchTranslatorV13 {
 
     // this is because the query generation may be triggered while the end class is not there yet
     if (endClassValue != null) {
-      this.#valueBuilder = new ValueBuilderFactoryV13().buildValueBuilder(
+      this.#valueBuilder = new ValueBuilderFactory().buildValueBuilder(
         this.#translator.specProvider.getProperty(this.#p).getPropertyType(endClassValue),
       );
       // pass everything needed to generate SPARQL
@@ -210,7 +210,7 @@ export default class BranchTranslatorV13 {
     // if there was any default label patterns generated, gather the variable names of the default label
     if (typeTranslator.defaultLblPatterns.length > 0) {
       this.#defaultLabelVars.push(
-        SparqlFactoryV13.buildVariable(typeTranslator.defaultLabelVarName),
+        SparqlFactory.buildVariable(typeTranslator.defaultLabelVarName),
       );
     }
   }
@@ -239,7 +239,7 @@ export default class BranchTranslatorV13 {
     this.#endClassPtrn = typeTranslator.resultPtrns;
     if (typeTranslator.defaultLblPatterns.length > 0) {
       this.#defaultLabelVars.push(
-        SparqlFactoryV13.buildVariable(typeTranslator.defaultLabelVarName),
+        SparqlFactory.buildVariable(typeTranslator.defaultLabelVarName),
       );
     }
   }
@@ -258,12 +258,12 @@ export default class BranchTranslatorV13 {
       // Génération des triples pour les dates de début, de fin et exactes, si disponibles
       if (specProperty.getBeginDateProperty()) {
         this.#intersectionPtrn.push(
-          SparqlFactoryV13.buildOptionalPattern([
-            SparqlFactoryV13.buildBgpPattern([
-              SparqlFactoryV13.buildIntersectionTriple(
-                SparqlFactoryV13.buildVariable(this.#s),
+          SparqlFactory.buildOptionalPattern([
+            SparqlFactory.buildBgpPattern([
+              SparqlFactory.buildIntersectionTriple(
+                SparqlFactory.buildVariable(this.#s),
                 specProperty.getBeginDateProperty(),
-                SparqlFactoryV13.buildVariable(`${this.#o}_begin`),
+                SparqlFactory.buildVariable(`${this.#o}_begin`),
               ),
             ]),
           ]),
@@ -272,12 +272,12 @@ export default class BranchTranslatorV13 {
 
       if (specProperty.getEndDateProperty()) {
         this.#intersectionPtrn.push(
-          SparqlFactoryV13.buildOptionalPattern([
-            SparqlFactoryV13.buildBgpPattern([
-              SparqlFactoryV13.buildIntersectionTriple(
-                SparqlFactoryV13.buildVariable(this.#s),
+          SparqlFactory.buildOptionalPattern([
+            SparqlFactory.buildBgpPattern([
+              SparqlFactory.buildIntersectionTriple(
+                SparqlFactory.buildVariable(this.#s),
                 specProperty.getEndDateProperty(),
-                SparqlFactoryV13.buildVariable(`${this.#o}_end`),
+                SparqlFactory.buildVariable(`${this.#o}_end`),
               ),
             ]),
           ]),
@@ -286,12 +286,12 @@ export default class BranchTranslatorV13 {
 
       if (specProperty.getExactDateProperty()) {
         this.#intersectionPtrn.push(
-          SparqlFactoryV13.buildOptionalPattern([
-            SparqlFactoryV13.buildBgpPattern([
-              SparqlFactoryV13.buildIntersectionTriple(
-                SparqlFactoryV13.buildVariable(this.#s),
+          SparqlFactory.buildOptionalPattern([
+            SparqlFactory.buildBgpPattern([
+              SparqlFactory.buildIntersectionTriple(
+                SparqlFactory.buildVariable(this.#s),
                 specProperty.getExactDateProperty(),
-                SparqlFactoryV13.buildVariable(`${this.#o}_exact`),
+                SparqlFactory.buildVariable(`${this.#o}_exact`),
               ),
             ]),
           ]),
@@ -300,11 +300,11 @@ export default class BranchTranslatorV13 {
     } else {
       // Génération du triple d'intersection normal si aucune propriété de date n'est spécifiée
       this.#intersectionPtrn.push(
-        SparqlFactoryV13.buildBgpPattern([
-          SparqlFactoryV13.buildIntersectionTriple(
-            SparqlFactoryV13.buildVariable(this.#s),
+        SparqlFactory.buildBgpPattern([
+          SparqlFactory.buildIntersectionTriple(
+            SparqlFactory.buildVariable(this.#s),
             this.#p,
-            SparqlFactoryV13.buildVariable(this.#o),
+            SparqlFactory.buildVariable(this.#o),
           ),
         ]),
       );
@@ -312,9 +312,9 @@ export default class BranchTranslatorV13 {
     // Ajout du filtre de langue si la propriété est multilingue
     if (specProperty.isMultilingual()) {
       this.#intersectionPtrn.push(
-        SparqlFactoryV13.buildFilterLangEquals(
-          SparqlFactoryV13.buildVariable(this.#o),
-          SparqlFactoryV13.buildLiteral(this.#translator.settings.language),
+        SparqlFactory.buildFilterLangEquals(
+          SparqlFactory.buildVariable(this.#o),
+          SparqlFactory.buildLiteral(this.#translator.settings.language),
         ),
       );
     }
@@ -354,9 +354,9 @@ export default class BranchTranslatorV13 {
       ?.getServiceEndpoint();
 
     let servicePtrn: Pattern | null = null;
-    const endpoint = SparqlFactoryV13.buildNamedNode(sparqlService);
+    const endpoint = SparqlFactory.buildNamedNode(sparqlService);
     if (sparqlService && exceptStartPtrn.length > 0) {
-      servicePtrn = SparqlFactoryV13.buildServicePattern(
+      servicePtrn = SparqlFactory.buildServicePattern(
         exceptStartPtrn,
         endpoint,
       );
@@ -374,12 +374,12 @@ export default class BranchTranslatorV13 {
     // if this branch is optional and is not inside an optional branch
     if (isOptional && !this.#isInOption) {
       finalResultPtrns.push(
-        SparqlFactoryV13.buildOptionalPattern(normalOrServicePatterns),
+        SparqlFactory.buildOptionalPattern(normalOrServicePatterns),
       );
     } else if (isNotExists && !this.#isInOption) {
       finalResultPtrns.push(
-        SparqlFactoryV13.buildNotExistsPattern(
-          SparqlFactoryV13.buildGroupPattern(normalOrServicePatterns),
+        SparqlFactory.buildNotExistsPattern(
+          SparqlFactory.buildGroupPattern(normalOrServicePatterns),
         ),
       );
     } else {

@@ -17,7 +17,7 @@ import {
   TermVariable as SparqlTermVariable,
 } from "@traqula/rules-sparql-1-1";
 import { ISparnaturalSpecification } from "../../../spec-providers/ISparnaturalSpecification";
-import SparqlFactoryV13 from "./SparqlFactoryV13";
+import SparqlFactory from "../SparqlFactory";
 import ISpecificationProperty from "../../../spec-providers/ISpecificationProperty";
 import QueryWhereTranslatorV13 from "./QueryWhereTranslatorV13";
 import { Model } from "rdf-shacl-commons";
@@ -67,12 +67,12 @@ export class JsonV13SparqlTranslator {
 
     const traqulaQuery: QuerySelect = F.querySelect({
       context: Object.entries(this.prefixes).map(([prefix, iri]) =>
-        F.contextDefinitionPrefix(F.gen(), prefix, SparqlFactoryV13.buildNamedNode(iri))
+        F.contextDefinitionPrefix(F.gen(), prefix, SparqlFactory.buildNamedNode(iri))
       ),
       // Traqula only sets distinct when it is true
       ...(this.jsonQuery.distinct ? { distinct: true } : {}),
       variables: this.#varsToRDFJS(this.jsonQuery.variables),
-      where: SparqlFactoryV13.buildGroupPattern(this.#createWhereClause()),
+      where: SparqlFactory.buildGroupPattern(this.#createWhereClause()),
       solutionModifiers: {
         order: this.#orderFromSolutionModifiers(this.jsonQuery),
         limitOffset: limit ? F.solutionModifierLimitOffset(limit, undefined, F.gen()) : undefined,
@@ -173,10 +173,10 @@ export class JsonV13SparqlTranslator {
         const actualVar = concatOnLabel ? varName + "_label" : varName;
 
         return [
-          SparqlFactoryV13.buildAggregateFunctionExpression(
+          SparqlFactory.buildAggregateFunctionExpression(
             v.expression.aggregation,
-            SparqlFactoryV13.buildVariable(actualVar),
-            SparqlFactoryV13.buildVariable(v.variable.value),
+            SparqlFactory.buildVariable(actualVar),
+            SparqlFactory.buildVariable(v.variable.value),
           ),
         ];
       }
@@ -201,7 +201,7 @@ export class JsonV13SparqlTranslator {
         let specProperty: ISpecificationProperty | undefined = findVarProperty(where.predicateObjectPairs, varName);
 
         if (!specProperty) {
-          return [SparqlFactoryV13.buildVariable(varName)];
+          return [SparqlFactory.buildVariable(varName)];
         }
 
         if (
@@ -212,19 +212,19 @@ export class JsonV13SparqlTranslator {
           const result: Variable[] = [];
 
           if (specProperty.getBeginDateProperty()) {
-            result.push(SparqlFactoryV13.buildVariable(`${varName}_begin`));
+            result.push(SparqlFactory.buildVariable(`${varName}_begin`));
           }
           if (specProperty.getEndDateProperty()) {
-            result.push(SparqlFactoryV13.buildVariable(`${varName}_end`));
+            result.push(SparqlFactory.buildVariable(`${varName}_end`));
           }
           if (specProperty.getExactDateProperty()) {
-            result.push(SparqlFactoryV13.buildVariable(`${varName}_exact`));
+            result.push(SparqlFactory.buildVariable(`${varName}_exact`));
           }
 
           return result;
         }
 
-        return [SparqlFactoryV13.buildVariable(varName)];
+        return [SparqlFactory.buildVariable(varName)];
       }
     });
 
@@ -251,7 +251,7 @@ export class JsonV13SparqlTranslator {
 
     return F.solutionModifierOrder(
       order.orderDefs.map((o): Ordering => ({
-        expression: SparqlFactoryV13.buildVariable(o.expression.value),
+        expression: SparqlFactory.buildVariable(o.expression.value),
         descending: o.descending === true,
         loc: F.gen(),
       })),

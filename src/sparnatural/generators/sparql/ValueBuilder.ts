@@ -1,18 +1,17 @@
 import {
-  BgpPattern,
-  BlankTerm,
-  FilterPattern,
-  FunctionCallExpression,
-  IriTerm,
-  LiteralTerm,
+  AstFactory,
+  PatternBgp,
+  PatternFilter,
   Pattern,
-  Triple,
+  PatternValues,
+  TermBlank,
+  TermIriFull,
+  TermLiteral,
+  TripleNesting,
   ValuePatternRow,
-  ValuesPattern,
-} from "sparqljs";
+} from "@traqula/rules-sparql-1-1";
 import { TermIri, TermTypedVariable } from "../../SparnaturalQueryIfc-v13";
 import SparqlFactory from "./SparqlFactory";
-import { DataFactory } from "rdf-data-factory";
 import { ISparnaturalSpecification } from "../../spec-providers/ISparnaturalSpecification";
 import { Config } from "../../ontologies/SparnaturalConfig";
 import ISpecificationProperty from "../../spec-providers/ISpecificationProperty";
@@ -20,7 +19,7 @@ import { SHACLSpecificationEntity } from "../../spec-providers/shacl/SHACLSpecif
 import { DateCriteria, RDFTerm, RdfTermCriteria, Criteria, BooleanCriteria, NumberCriteria, SearchCriteria, MapCriteria } from "../../SparnaturalQueryIfc";
 import { GEOFUNCTIONS, GEOSPARQL } from "rdf-shacl-commons";
 
-const factory = new DataFactory();
+const F = new AstFactory();
 
 /**
  * A factory for creating ValueBuilders from the widgetType. This is the association between the widget type
@@ -158,30 +157,29 @@ export class RdfTermValueBuilder
     let widgetValues = this.values as RdfTermCriteria[];
 
     if (this.isBlockingObjectProp()) {
-      let singleTriple: Triple = SparqlFactory.buildTriple(
-        factory.variable(this.startClassVal.value),
-        factory.namedNode(this.propertyVal.value),
+      let singleTriple: TripleNesting = SparqlFactory.buildTriple(
+        SparqlFactory.buildVariable(this.startClassVal.value),
+        SparqlFactory.buildNamedNode(this.propertyVal.value),
         this.#rdfTermToSparqlQuery(widgetValues[0].rdfTerm)
       );
 
-      let ptrn: BgpPattern = {
-        type: "bgp",
-        triples: [singleTriple],
-      };
+      let ptrn: PatternBgp = SparqlFactory.buildBgpPattern([singleTriple]);
 
       return [ptrn];
     } else {
       let vals = widgetValues.map((v) => {
         let vl: ValuePatternRow = {};
-        vl["?" + this.endClassVal.value] = this.#rdfTermToSparqlQuery(
+        // SPARQL does not allow blank nodes in a VALUES clause, only IRIs and literals are expected here
+        vl[this.endClassVal.value] = this.#rdfTermToSparqlQuery(
           v.rdfTerm
-        );
+        ) as TermIriFull | TermLiteral;
         return vl;
       });
-      let valuePattern: ValuesPattern = {
-        type: "values",
-        values: vals,
-      };
+      let valuePattern: PatternValues = F.patternValues(
+        [SparqlFactory.buildVariable(this.endClassVal.value)],
+        vals,
+        F.gen()
+      );
       return [valuePattern];
     }
   }
@@ -191,24 +189,24 @@ export class RdfTermValueBuilder
    * to be inserted in a SPARQL query.
    * @returns
    */
-  #rdfTermToSparqlQuery(rdfTerm: RDFTerm): IriTerm | BlankTerm | LiteralTerm {
+  #rdfTermToSparqlQuery(rdfTerm: RDFTerm): TermIriFull | TermBlank | TermLiteral {
     if (rdfTerm.type == "uri") {
-      return factory.namedNode(rdfTerm.value);
+      return SparqlFactory.buildNamedNode(rdfTerm.value);
     } else if (rdfTerm.type == "literal") {
       if (rdfTerm["xml:lang"]) {
-        return factory.literal(rdfTerm.value, rdfTerm["xml:lang"]);
+        return SparqlFactory.buildLiteral(rdfTerm.value, rdfTerm["xml:lang"]);
       } else if (rdfTerm.datatype) {
         // if the second parameter is a NamedNode, then it is considered a datatype, otherwise it is
         // considered like a language
         // so we make the datatype a NamedNode
-        let namedNodeDatatype = factory.namedNode(rdfTerm.datatype);
-        return factory.literal(rdfTerm.value, namedNodeDatatype);
+        let namedNodeDatatype = SparqlFactory.buildNamedNode(rdfTerm.datatype);
+        return SparqlFactory.buildLiteral(rdfTerm.value, namedNodeDatatype);
       } else {
-        return factory.literal(rdfTerm.value);
+        return SparqlFactory.buildLiteral(rdfTerm.value);
       }
     } else if (rdfTerm.type == "bnode") {
       // we don't know what to do with this, but don't trigger an error
-      return factory.blankNode(rdfTerm.value);
+      return SparqlFactory.buildBlankNode(rdfTerm.value);
     } else {
       throw new Error("Unexpected rdfTerm type " + rdfTerm.type);
     }
@@ -257,19 +255,16 @@ export class BooleanValueBuilder
 
     if(!isLiteral) {
       // not a literal, we turn the criteria into FILTER EXISTS or FILTER NOT EXISTS
-      let ptrn: BgpPattern = {
-        type: "bgp",
-        triples: [
-          {
-            subject: factory.variable(this.startClassVal.value),
-            predicate: factory.namedNode(this.propertyVal.value),
-            object: factory.variable(this.endClassVal.value),
-          },
-        ],
-      };
+      let ptrn: PatternBgp = SparqlFactory.buildBgpPattern([
+        SparqlFactory.buildTriple(
+          SparqlFactory.buildVariable(this.startClassVal.value),
+          SparqlFactory.buildNamedNode(this.propertyVal.value),
+          SparqlFactory.buildVariable(this.endClassVal.value),
+        ),
+      ]);
 
       let groupPattern = SparqlFactory.buildGroupPattern([ptrn]);
-      let filterPtrn: FilterPattern = widgetValues[0].boolean 
+      let filterPtrn: PatternFilter = widgetValues[0].boolean 
           ? SparqlFactory.buildExistsPattern(groupPattern)
           : SparqlFactory.buildNotExistsPattern(groupPattern)
       ;
@@ -279,34 +274,32 @@ export class BooleanValueBuilder
     } else {
       // if we are blocking the object prop, we create it directly here with the value as the object
       if (this.isBlockingObjectProp()) {
-        let ptrn: BgpPattern = {
-          type: "bgp",
-          triples: [
-            {
-              subject: factory.variable(this.startClassVal.value),
-              predicate: factory.namedNode(this.propertyVal.value),
-              object: factory.literal(
-                widgetValues[0].boolean.toString(),
-                factory.namedNode("http://www.w3.org/2001/XMLSchema#boolean")
-              ),
-            },
-          ],
-        };
+        let ptrn: PatternBgp = SparqlFactory.buildBgpPattern([
+          SparqlFactory.buildTriple(
+            SparqlFactory.buildVariable(this.startClassVal.value),
+            SparqlFactory.buildNamedNode(this.propertyVal.value),
+            SparqlFactory.buildLiteral(
+              widgetValues[0].boolean.toString(),
+              SparqlFactory.buildNamedNode("http://www.w3.org/2001/XMLSchema#boolean")
+            ),
+          ),
+        ]);
         return [ptrn];
       } else {
         // otherwise the object prop is created and we create a VALUES clause with the actual boolean
         let vals = (this.values as BooleanCriteria[]).map((v) => {
           let vl: ValuePatternRow = {};
-          vl["?" + this.endClassVal.value] = factory.literal(
+          vl[this.endClassVal.value] = SparqlFactory.buildLiteral(
             widgetValues[0].boolean.toString(),
-            factory.namedNode("http://www.w3.org/2001/XMLSchema#boolean")
+            SparqlFactory.buildNamedNode("http://www.w3.org/2001/XMLSchema#boolean")
           );
           return vl;
         });
-        let valuePattern: ValuesPattern = {
-          type: "values",
-          values: vals,
-        };
+        let valuePattern: PatternValues = F.patternValues(
+          [SparqlFactory.buildVariable(this.endClassVal.value)],
+          vals,
+          F.gen()
+        );
         return [valuePattern];
       }
     }
@@ -345,18 +338,18 @@ export class NumberValueBuilder
     return [
       SparqlFactory.buildFilterRangeDateOrNumber(
         widgetValues[0].min != undefined
-          ? factory.literal(
+          ? SparqlFactory.buildLiteral(
               widgetValues[0].min.toString(),
-              factory.namedNode("http://www.w3.org/2001/XMLSchema#decimal")
+              SparqlFactory.buildNamedNode("http://www.w3.org/2001/XMLSchema#decimal")
             )
           : null,
         widgetValues[0].max != undefined
-          ? factory.literal(
+          ? SparqlFactory.buildLiteral(
               widgetValues[0].max.toString(),
-              factory.namedNode("http://www.w3.org/2001/XMLSchema#decimal")
+              SparqlFactory.buildNamedNode("http://www.w3.org/2001/XMLSchema#decimal")
             )
           : null,
-        factory.variable(this.endClassVal.value)
+        SparqlFactory.buildVariable(this.endClassVal.value)
       ),
     ];
   }
@@ -389,8 +382,8 @@ export class SearchRegexValueBuilder
         return [ SparqlFactory.buildFilterOr(
           widgetValues.map((v) => {
             return SparqlFactory.buildOperationLcaseEquals(
-              factory.literal(`${v.search}`),
-              factory.variable(this.endClassVal.value)
+              SparqlFactory.buildLiteral(`${v.search}`),
+              SparqlFactory.buildVariable(this.endClassVal.value)
             );
           })
         ) ];
@@ -400,33 +393,30 @@ export class SearchRegexValueBuilder
        return [ SparqlFactory.buildFilterOr(
         widgetValues.map((v) => {
           return SparqlFactory.buildRegexOperation(
-            factory.literal(`${v.search}`),
-            factory.variable(this.endClassVal.value)
+            SparqlFactory.buildLiteral(`${v.search}`),
+            SparqlFactory.buildVariable(this.endClassVal.value)
           );
         })
        ) ];
       }
       case Config.GRAPHDB_SEARCH_PROPERTY: {
         // builds a GraphDB-specific search pattern
-        let ptrn: BgpPattern = {
-          type: "bgp",
-          triples: [
-            {
-              subject: factory.variable(this.startClassVal.value),
-              predicate: factory.namedNode(
-                "http://www.ontotext.com/connectors/lucene#query"
-              ),
-              object: factory.literal(`text:${widgetValues[0].search}`),
-            },
-            {
-              subject: factory.variable(this.startClassVal.value),
-              predicate: factory.namedNode(
-                "http://www.ontotext.com/connectors/lucene#entities"
-              ),
-              object: factory.variable(this.endClassVal.value),
-            },
-          ],
-        };
+        let ptrn: PatternBgp = SparqlFactory.buildBgpPattern([
+          SparqlFactory.buildTriple(
+            SparqlFactory.buildVariable(this.startClassVal.value),
+            SparqlFactory.buildNamedNode(
+              "http://www.ontotext.com/connectors/lucene#query"
+            ),
+            SparqlFactory.buildLiteral(`text:${widgetValues[0].search}`),
+          ),
+          SparqlFactory.buildTriple(
+            SparqlFactory.buildVariable(this.startClassVal.value),
+            SparqlFactory.buildNamedNode(
+              "http://www.ontotext.com/connectors/lucene#entities"
+            ),
+            SparqlFactory.buildVariable(this.endClassVal.value),
+          ),
+        ]);
         return [ptrn];
       }
       case Config.VIRTUOSO_SEARCH_PROPERTY: {
@@ -436,18 +426,15 @@ export class SearchRegexValueBuilder
           .map((e) => `'${e}'`)
           .join(" and ");
 
-        let ptrn: BgpPattern = {
-          type: "bgp",
-          triples: [
-            {
-              subject: factory.variable(this.endClassVal.value),
-              predicate: factory.namedNode(
-                "http://www.openlinksw.com/schemas/bif#contains"
-              ),
-              object: factory.literal(`${bif_query}`),
-            },
-          ],
-        };
+        let ptrn: PatternBgp = SparqlFactory.buildBgpPattern([
+          SparqlFactory.buildTriple(
+            SparqlFactory.buildVariable(this.endClassVal.value),
+            SparqlFactory.buildNamedNode(
+              "http://www.openlinksw.com/schemas/bif#contains"
+            ),
+            SparqlFactory.buildLiteral(`${bif_query}`),
+          ),
+        ]);
         return [ptrn];
       }
       case Config.JENA_SEARCH_PROPERTY: {
@@ -478,19 +465,19 @@ export class DateTimePickerValueBuilder extends BaseValueBuilder implements Valu
         return [
           
           SparqlFactory.buildDateRangeOrExactDatePattern(
-            widgetValues[0].start?factory.literal(
+            widgetValues[0].start?SparqlFactory.buildLiteral(
               this.#formatSparqlDate(widgetValues[0].start),
-              factory.namedNode("http://www.w3.org/2001/XMLSchema#dateTime")
+              SparqlFactory.buildNamedNode("http://www.w3.org/2001/XMLSchema#dateTime")
             ):null,
-            widgetValues[0].stop?factory.literal(
+            widgetValues[0].stop?SparqlFactory.buildLiteral(
               this.#formatSparqlDate(widgetValues[0].stop),
-              factory.namedNode("http://www.w3.org/2001/XMLSchema#dateTime")
+              SparqlFactory.buildNamedNode("http://www.w3.org/2001/XMLSchema#dateTime")
             ):null,
-            factory.variable(this.startClassVal.value),
-            factory.namedNode(beginDateProp),
-            factory.namedNode(endDateProp),
-            exactDateProp != null?factory.namedNode(exactDateProp):null,
-            factory.variable(this.endClassVal.value)
+            SparqlFactory.buildVariable(this.startClassVal.value),
+            SparqlFactory.buildNamedNode(beginDateProp),
+            SparqlFactory.buildNamedNode(endDateProp),
+            exactDateProp != null?SparqlFactory.buildNamedNode(exactDateProp):null,
+            SparqlFactory.buildVariable(this.endClassVal.value)
           )
         ];
         
@@ -499,15 +486,15 @@ export class DateTimePickerValueBuilder extends BaseValueBuilder implements Valu
         // normal case, standard config
         return [
           SparqlFactory.buildFilterRangeDateOrNumber(
-            widgetValues[0].start?factory.literal(
+            widgetValues[0].start?SparqlFactory.buildLiteral(
               this.#formatSparqlDate(widgetValues[0].start),
-              factory.namedNode("http://www.w3.org/2001/XMLSchema#dateTime")
+              SparqlFactory.buildNamedNode("http://www.w3.org/2001/XMLSchema#dateTime")
             ):null,
-            widgetValues[0].stop?factory.literal(
+            widgetValues[0].stop?SparqlFactory.buildLiteral(
               this.#formatSparqlDate(widgetValues[0].stop),
-              factory.namedNode("http://www.w3.org/2001/XMLSchema#dateTime")
+              SparqlFactory.buildNamedNode("http://www.w3.org/2001/XMLSchema#dateTime")
             ):null,
-            factory.variable(this.endClassVal.value)
+            SparqlFactory.buildVariable(this.endClassVal.value)
           )
         ];
       } 
@@ -582,17 +569,13 @@ export class MapValueBuilder
 
     // the property between the subject and its position expressed as wkt value, e.g. http://www.w3.org/2003/01/geo/wgs84_pos#geometry
 
-    let filterPtrn: FilterPattern = {
-      type: "filter",
-      expression: <FunctionCallExpression>(<unknown>{
-        type: "functionCall",
-        function: GEOFUNCTIONS.WITHIN,
-        args: [
-          factory.variable(this.endClassVal.value),
-          this.#buildPolygon(widgetValues[0].coordinates[0]),
-        ],
-      }),
-    };
+    let filterPtrn: PatternFilter = SparqlFactory.buildFilterFunctionCall(
+      GEOFUNCTIONS.WITHIN.value,
+      [
+        SparqlFactory.buildVariable(this.endClassVal.value),
+        this.#buildPolygon(widgetValues[0].coordinates[0]),
+      ]
+    );
 
     return [filterPtrn];
   }
@@ -604,9 +587,9 @@ export class MapValueBuilder
     });
     // polygon must be closed with the starting point
     let startPt = coordinates[0];
-    let literal: LiteralTerm = factory.literal(
+    let literal: TermLiteral = SparqlFactory.buildLiteral(
       `Polygon((${polygon}${startPt.lng} ${startPt.lat}))`,
-      GEOSPARQL.WKT_LITERAL
+      SparqlFactory.buildNamedNode(GEOSPARQL.WKT_LITERAL.value)
     );
 
     return literal;

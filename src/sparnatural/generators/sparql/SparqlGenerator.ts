@@ -32,7 +32,7 @@ export function withMetadata<T extends Sparql11Nodes>(node: T): T & { metadata: 
 }
 
 /**
- * Attaches a comment to a node of the Traqula AST, which the SparqlGeneratorV13 prints as a "# ..." line before the node
+ * Attaches a comment to a node of the Traqula AST, which the SparqlGenerator prints as a "# ..." line before the node
  * @param node The node to comment. Currently comments are only printed on basic graph patterns and triples
  * @param comment The comment text, it may contain multiple lines
  * @returns the same node
@@ -128,15 +128,15 @@ const triplesBlockWithComments: SparqlGeneratorRule<"triplesBlock", PatternBgp> 
 /**
  * The SPARQL 1.1 generator of Traqula, with the triplesBlock rule replaced to support comments
  */
-const sparqlGeneratorV13Builder = GeneratorBuilder
+const sparqlGeneratorBuilder = GeneratorBuilder
   .create(sparql11GeneratorBuilder)
   .patchRule(triplesBlockWithComments);
 
 /**
  * Generates the SPARQL string of a Traqula AST, including the comments attached to its nodes (see addComment)
  */
-export class SparqlGeneratorV13 {
-  #generator = sparqlGeneratorV13Builder.build();
+export class SparqlGenerator {
+  #generator = sparqlGeneratorBuilder.build();
   #defaultContext: SparqlGeneratorContext & { origSource: string };
 
   constructor(defaultContext: Partial<SparqlGeneratorContext> = {}) {

@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Parser } from '@traqula/parser-sparql-1-1';
 import { JsonV13SparqlTranslator } from '../../sparnatural/generators/sparql/fromjsonv13/JsonV13SparqlTranslator';
-import { SparqlGeneratorV13 } from '../../sparnatural/generators/sparql/fromjsonv13/SparqlGeneratorV13';
+import { SparqlGenerator } from '../../sparnatural/generators/sparql/SparqlGenerator';
 import { SparnaturalQuery } from '../../sparnatural/SparnaturalQueryIfc-v13';
 import { SparnaturalSpecificationFactory } from '../../sparnatural/spec-providers/SparnaturalSpecificationFactory';
 
@@ -26,7 +26,7 @@ function loadTestCases(baseDir: string) {
 
 describe('JsonV13SparqlTranslator directory-driven tests', () => {
   const baseDir = path.join(__dirname, 'cases');
-  const generator = new SparqlGeneratorV13();
+  const generator = new SparqlGenerator();
   const parser = new Parser();
   // config shared by the test cases that don't provide their own config.ttl
   const sharedConfigPath = path.join(baseDir, 'config.ttl');

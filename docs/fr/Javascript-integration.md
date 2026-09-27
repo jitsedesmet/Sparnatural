@@ -71,7 +71,6 @@ sparnatural.addEventListener("queryUpdated", (event) => {
   // expand query to replace identifiers with content of sparqlScript annotation
   console.log(event.detail.queryString);
   console.log(event.detail.queryJson);
-  console.log(event.detail.querySparqlJs);
   queryString = sparnatural.expandSparql(event.detail.queryString);
   // set query on YasQE
   yasqe.setValue(queryString);
@@ -97,13 +96,11 @@ sparnatural.addEventListener("reset", (event) => {
 L'événement `queryUpdated` est déclenché à chaque fois que la requête est modifiée. Le détail de l'événement contient :
   - La chaîne SPARQL dans `queryString`
   - La structure JSON Sparnatural dans `queryJson`
-  - La structure (format SPARQL.js)[https://github.com/RubenVerborgh/SPARQL.js/] dans `querySparqlJs`
 
 ```javascript
 sparnatural.addEventListener("queryUpdated", (event) => {
   console.log(event.detail.queryString);
   console.log(event.detail.queryJson);
-  console.log(event.detail.querySparqlJs);
 });
 ```
 

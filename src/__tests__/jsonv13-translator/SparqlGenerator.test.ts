@@ -4,8 +4,8 @@ import { traqulaIndentation } from '@traqula/core';
 import { Generator } from '@traqula/generator-sparql-1-1';
 import { Parser } from '@traqula/parser-sparql-1-1';
 import { AstFactory, Pattern, QuerySelect } from '@traqula/rules-sparql-1-1';
-import SparqlFactoryV13 from '../../sparnatural/generators/sparql/fromjsonv13/SparqlFactoryV13';
-import { SparqlGeneratorV13, addComment, withMetadata } from '../../sparnatural/generators/sparql/fromjsonv13/SparqlGeneratorV13';
+import SparqlFactory from '../../sparnatural/generators/sparql/SparqlFactory';
+import { SparqlGenerator, addComment, withMetadata } from '../../sparnatural/generators/sparql/SparqlGenerator';
 import { JsonV13SparqlTranslator } from '../../sparnatural/generators/sparql/fromjsonv13/JsonV13SparqlTranslator';
 import { SparnaturalQuery } from '../../sparnatural/SparnaturalQueryIfc-v13';
 import { SparnaturalSpecificationFactory } from '../../sparnatural/spec-providers/SparnaturalSpecificationFactory';
@@ -26,8 +26,8 @@ async function buildSpecProviderFromConfig(configTtl: string, language = 'en') {
 function buildSelectQuery(variables: string[], patterns: Pattern[]): QuerySelect {
   return F.querySelect({
     context: [],
-    variables: variables.map((v) => SparqlFactoryV13.buildVariable(v)),
-    where: SparqlFactoryV13.buildGroupPattern(patterns),
+    variables: variables.map((v) => SparqlFactory.buildVariable(v)),
+    where: SparqlFactory.buildGroupPattern(patterns),
     solutionModifiers: {},
     datasets: F.datasetClauses([], F.gen()),
   }, F.gen());
@@ -42,27 +42,27 @@ function buildSelectQuery(variables: string[], patterns: Pattern[]): QuerySelect
  * and returns the query together with its 2 triples and 2 basic graph patterns, to attach comments on them
  */
 function buildTestQuery() {
-  const knows = SparqlFactoryV13.buildTriple(
-    SparqlFactoryV13.buildVariable('Person_1'),
-    SparqlFactoryV13.buildNamedNode('http://example.com/knows'),
-    SparqlFactoryV13.buildVariable('Person_2'),
+  const knows = SparqlFactory.buildTriple(
+    SparqlFactory.buildVariable('Person_1'),
+    SparqlFactory.buildNamedNode('http://example.com/knows'),
+    SparqlFactory.buildVariable('Person_2'),
   );
-  const name = SparqlFactoryV13.buildTriple(
-    SparqlFactoryV13.buildVariable('Person_2'),
-    SparqlFactoryV13.buildNamedNode('http://example.com/name'),
-    SparqlFactoryV13.buildVariable('Name'),
+  const name = SparqlFactory.buildTriple(
+    SparqlFactory.buildVariable('Person_2'),
+    SparqlFactory.buildNamedNode('http://example.com/name'),
+    SparqlFactory.buildVariable('Name'),
   );
-  const knowsBgp = SparqlFactoryV13.buildBgpPattern([knows]);
-  const nameBgp = SparqlFactoryV13.buildBgpPattern([name]);
+  const knowsBgp = SparqlFactory.buildBgpPattern([knows]);
+  const nameBgp = SparqlFactory.buildBgpPattern([name]);
   const query = buildSelectQuery(['Person_1'], [
     knowsBgp,
-    SparqlFactoryV13.buildOptionalPattern([nameBgp]),
+    SparqlFactory.buildOptionalPattern([nameBgp]),
   ]);
   return { query, knows, name, knowsBgp, nameBgp };
 }
 
-describe('SparqlGeneratorV13', () => {
-  const generator = new SparqlGeneratorV13();
+describe('SparqlGenerator', () => {
+  const generator = new SparqlGenerator();
   const parser = new Parser();
 
   it('generates the same query as the standard Traqula generator when there are no comments', () => {
